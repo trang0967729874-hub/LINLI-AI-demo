@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>林立柠檬茶 · 营运 AI 管理平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" />
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    @keyframes guide-in { from { opacity: 0; transform: translateY(1rem); } to { opacity: 1; transform: translateY(0); } }
+    .guide-animate { animation: guide-in 0.5s ease-out forwards; }
+    @keyframes detect-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); } 50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); } }
+    .detect-box { animation: detect-pulse 2s ease-in-out infinite; }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+/* global React, ReactDOM */
+const { useState, useMemo, useEffect, useCallback, createContext, useContext } = React;
+
+const TODAY = new Date('2026-05-19');
+
+const INSPECTION_CATEGORIES = ['食安', '清洁', '服务', '目视化', '品质', '其他'];
+const CATEGORY_FILTERS = [
+  { key: '全部', icon: 'fa-layer-group', active: 'bg-gray-800 text-white' },
+  { key: '食安', icon: 'fa-shield-halved', active: 'bg-red-100 text-red-700 border border-red-200' },
+  { key: '清洁', icon: 'fa-broom', active: 'bg-blue-100 text-blue-700 border border-blue-200' },
+  { key: '服务', icon: 'fa-handshake', active: 'bg-purple-100 text-purple-700 border border-purple-200' },
+  { key: '目视化', icon: 'fa-eye', active: 'bg-indigo-100 text-indigo-700 border border-indigo-200' },
+  { key: '品质', icon: 'fa-star', active: 'bg-yellow-100 text-yellow-800 border border-yellow-200' },
+  { key: '其他', icon: 'fa-circle-dot', active: 'bg-gray-100 text-gray-600 border border-gray-200' },
+];
+const categoryConfig = {
+  食安: { icon: 'fa-shield-halved', color: 'text-red-600', bg: 'bg-red-100' },
+  清洁: { icon: 'fa-broom', color: 'text-blue-600', bg: 'bg-blue-100' },
+  服务: { icon: 'fa-handshake', color: 'text-purple-600', bg: 'bg-purple-100' },
+  目视化: { icon: 'fa-eye', color: 'text-indigo-600', bg: 'bg-indigo-100' },
+  品质: { icon: 'fa-star', color: 'text-yellow-600', bg: 'bg-yellow-100' },
+  其他: { icon: 'fa-circle-dot', color: 'text-gray-500', bg: 'bg-gray-100' },
+};
+
+const INITIAL_ANOMALIES = [
+  { id: 'A001', category: '品质', storeName: '福田万象城店', storeCity: '深圳', storeRegion: '福田区', storeZone: '华南', anomalyType: '柠檬捶打次数不足', confidence: 87, triggeredAt: '10:23', riskLevel: 'high', status: 'pending', description: 'AI视频识别发现该门店员工在制作柠檬茶时，柠檬捶打次数仅为2次，低于SOP标准的5次，影响出品口感一致性。', historicalCount: 4, assignee: '张督导' },
+  { id: 'A002', category: '食安', storeName: '南山海岸城店', storeCity: '深圳', storeRegion: '南山区', storeZone: '华南', anomalyType: '员工未佩戴口罩', confidence: 93, triggeredAt: '09:45', riskLevel: 'high', status: 'pending', description: 'AI视频识别发现后厨区域员工操作时未佩戴口罩，违反食品安全操作规范，存在卫生风险。', historicalCount: 1, assignee: '李督导' },
+  { id: 'A003', category: '目视化', storeName: '罗湖东门店', storeCity: '深圳', storeRegion: '罗湖区', storeZone: '华南', anomalyType: '营业时间内未开灯', confidence: 76, triggeredAt: '11:02', riskLevel: 'medium', status: 'pending', description: 'AI识别到门店在营业时间段内部分区域照明未开启，影响门店形象与顾客体验。', historicalCount: 2, assignee: '张督导' },
+  { id: 'A004', category: '目视化', storeName: '龙华壹方城店', storeCity: '深圳', storeRegion: '龙华区', storeZone: '华南', anomalyType: '物料摆放不规范', confidence: 81, triggeredAt: '08:30', riskLevel: 'medium', status: 'rectifying', description: 'AI识别到吧台物料摆放未按标准陈列图执行，杯具摆放位置偏差超过规定范围。', historicalCount: 3, assignee: '王督导', deadline: '2026-05-22' },
+  { id: 'A005', category: '清洁', storeName: '宝安中心区店', storeCity: '深圳', storeRegion: '宝安区', storeZone: '华南', anomalyType: '开店前未完成清洁', confidence: 89, triggeredAt: '08:55', riskLevel: 'low', status: 'rectifying', description: 'AI识别到门店开业前地面清洁工作未完成，存在卫生隐患。', historicalCount: 0, assignee: '李督导', deadline: '2026-05-20', rectificationNote: '已要求店长补做清洁并提交照片' },
+  { id: 'A006', category: '服务', storeName: '光明凤凰城店', storeCity: '深圳', storeRegion: '光明区', storeZone: '华南', anomalyType: '收银台无人值守', confidence: 91, triggeredAt: '14:15', riskLevel: 'high', status: 'reviewing', description: 'AI识别到高峰时段收银台无人值守超过3分钟，影响顾客排队体验。', historicalCount: 2, assignee: '王督导', deadline: '2026-05-19', rectificationNote: '已安排专职收银员，调整排班表' },
+  { id: 'A007', category: '品质', storeName: '坪山中心店', storeCity: '深圳', storeRegion: '坪山区', storeZone: '华南', anomalyType: '饮品温度不达标', confidence: 78, triggeredAt: '13:40', riskLevel: 'medium', status: 'closed', description: 'AI识别到冷饮出品温度高于标准值2°C，影响产品品质。', historicalCount: 1, assignee: '张督导', deadline: '2026-05-18', rectificationNote: '已检修制冷设备，温度恢复正常' },
+  { id: 'A008', category: '目视化', storeName: '大鹏新区店', storeCity: '深圳', storeRegion: '大鹏区', storeZone: '华南', anomalyType: '菜单价格标签缺失', confidence: 65, triggeredAt: '09:10', riskLevel: 'low', status: 'rejected', description: 'AI识别到部分菜单价格标签疑似缺失，但实际为新版菜单更换期间的正常状态。', historicalCount: 0, assignee: '李督导' },
+];
+
+const ZONE_CATEGORY_MATRIX = {
+  华南: { 食安: 'high', 清洁: 'medium', 服务: 'medium', 目视化: 'low', 品质: 'high', 其他: 'low' },
+  华东: { 食安: 'medium', 清洁: 'low', 服务: 'high', 目视化: 'medium', 品质: 'medium', 其他: 'low' },
+  华北: { 食安: 'low', 清洁: 'low', 服务: 'low', 目视化: 'low', 品质: 'low', 其他: 'low' },
+  西南: { 食安: 'medium', 清洁: 'medium', 服务: 'low', 目视化: 'low', 品质: 'medium', 其他: 'low' },
+  西北: { 食安: 'low', 清洁: 'medium', 服务: 'low', 目视化: 'low', 品质: 'low', 其他: 'low' },
+};
+function zoneMatrixRow(zone) {
+  return INSPECTION_CATEGORIES.map((c) => ZONE_CATEGORY_MATRIX[zone][c]);
+}
+
+const REGION_DATA = [
+  { zone: '华南', riskScore: 84, cities: [{ name: '深圳', score: 91 }, { name: '广州', score: 78 }, { name: '佛山', score: 55 }, { name: '东莞', score: 48 }, { name: '珠海', score: 32 }] },
+  { zone: '华东', riskScore: 62, cities: [{ name: '上海', score: 71 }, { name: '杭州', score: 65 }, { name: '南京', score: 58 }, { name: '苏州', score: 44 }, { name: '宁波', score: 38 }] },
+  { zone: '华北', riskScore: 38, cities: [{ name: '北京', score: 45 }, { name: '天津', score: 38 }, { name: '石家庄', score: 32 }, { name: '济南', score: 28 }, { name: '郑州', score: 25 }] },
+  { zone: '西南', riskScore: 55, cities: [{ name: '成都', score: 68 }, { name: '重庆', score: 61 }, { name: '昆明', score: 42 }, { name: '贵阳', score: 35 }, { name: '西安', score: 29 }] },
+  { zone: '西北', riskScore: 29, cities: [{ name: '兰州', score: 35 }, { name: '乌鲁木齐', score: 28 }, { name: '西宁', score: 22 }, { name: '银川', score: 18 }, { name: '呼和浩特', score: 15 }] },
+];
+
+const PROBLEM_TYPES = INSPECTION_CATEGORIES;
+const HEAT_MATRIX = Object.fromEntries(Object.keys(ZONE_CATEGORY_MATRIX).map((z) => [z, zoneMatrixRow(z)]));
+const DIRECTOR_ACTIONS = [
+  { id: 'sop', color: 'purple', icon: 'fa-book', title: '更新全国 SOP 标准', desc: '将高频异常类型提交至标准修订流程，附带数据支撑报告', reason: '品质板块违规占比高，需修订标准' },
+  { id: 'resource', color: 'blue', icon: 'fa-users', title: '调配督导资源', desc: '将华南区督导名额从12人调整为16人，补充高风险区域覆盖', reason: '华东整改率低于均值，督导配置不足' },
+  { id: 'special', color: 'red', icon: 'fa-bullhorn', title: '发起专项整治', desc: '对华南区食安/品质板块问题发起全国专项行动，设定30天整改期', reason: '华南食安+品质占全国38%' },
+  { id: 'export', color: 'gray', icon: 'fa-file-export', title: '导出决策报告', desc: '生成本期营运分析报告，包含 AI 洞察、ROI 核算与改进建议', reason: null },
+];
+const MANAGER_ACTIONS = [
+  { id: 'task', color: 'blue', icon: 'fa-paper-plane', title: '向督导下派专项任务', desc: '针对深圳福田品质/食安高发问题，发起专项督查', reason: '品质板块本周+83%', recommend: true },
+  { id: 'train', color: 'purple', icon: 'fa-chalkboard-teacher', title: '触发区域培训任务', desc: '对华南区食安/品质板块推送 SOP 强化培训', reason: '佛山清洁板块根因：新员工培训不足', recommend: true },
+  { id: 'report', color: 'orange', icon: 'fa-flag', title: '上报总监决策', desc: '汇总华南区六大板块风险，申请增配督导资源', reason: '广州食安板块逾期工单集中', recommend: false },
+];
+const CITY_HEAT_DATA = {
+  深圳: ['high', 'medium', 'medium', 'low', 'high', 'low'],
+  广州: ['high', 'low', 'low', 'medium', 'medium', 'low'],
+  佛山: ['medium', 'high', 'low', 'low', 'low', 'low'],
+  东莞: ['medium', 'low', 'medium', 'low', 'medium', 'low'],
+  珠海: ['low', 'low', 'low', 'low', 'low', 'low'],
+};
+
+const GLOBAL_STATS = {
+  week: { totalStores: 1247, newAnomalies: 124, rectifyRate: 78, aiAccuracy: 89, costSaved: 12.4, intercepted: 124 },
+  month: { totalStores: 1247, newAnomalies: 342, rectifyRate: 78, aiAccuracy: 89, costSaved: 31.6, intercepted: 316 },
+  quarter: { totalStores: 1247, newAnomalies: 1252, rectifyRate: 75, aiAccuracy: 87, costSaved: 125.3, intercepted: 1189 },
+};
+
+const SOUTH_CHINA_STATS = {
+  week: { newCount: 34, completionRate: 71, overdue: 3, intercepted: 28 },
+  month: { newCount: 127, completionRate: 68, overdue: 8, intercepted: 104 },
+  quarter: { newCount: 412, completionRate: 65, overdue: 21, intercepted: 358 },
+};
+
+const ROI_DATA = {
+  week: [
+    { label: '周一', intercepted: 12, saved: 1.2 }, { label: '周二', intercepted: 18, saved: 1.8 }, { label: '周三', intercepted: 15, saved: 1.5 },
+    { label: '周四', intercepted: 24, saved: 2.4 }, { label: '周五', intercepted: 20, saved: 2.0 }, { label: '周六', intercepted: 16, saved: 1.6 }, { label: '今日', intercepted: 19, saved: 1.9 },
+  ],
+  month: [
+    { label: '第1周', intercepted: 68, saved: 6.8 }, { label: '第2周', intercepted: 82, saved: 8.2 }, { label: '第3周', intercepted: 91, saved: 9.1 }, { label: '第4周', intercepted: 75, saved: 7.5 },
+  ],
+  quarter: [
+    { label: '1月', intercepted: 210, saved: 21.0 }, { label: '2月', intercepted: 245, saved: 24.5 }, { label: '3月', intercepted: 198, saved: 19.8 }, { label: '4月', intercepted: 312, saved: 31.2 }, { label: '5月', intercepted: 287, saved: 28.7 },
+  ],
+};
+
+const AI_INSIGHTS = {
+  week: {
+    warnings: [
+      '华南区【食安板块】本周新增违规34条，较上周+42%，主要集中在深圳福田、广州天河',
+      '华东区【服务板块】整改完成率本周降至61%，逾期工单中68%集中在同一督导负责区域',
+    ],
+    trends: [
+      '西南区成都【清洁板块】问题呈上升趋势，连续3天触发预警，疑似新员工上岗培训不足',
+      '华北区北京【服务板块】缺失问题有所抬头，需关注',
+    ],
+    positives: [
+      '华北区本周AI误判率从18%降至9%，模型优化效果显著',
+      '西北区整改完成率达91%，六大板块全部绿色，为全国最优',
+    ],
+  },
+  month: {
+    warnings: [
+      '华南区【品质板块】本月累计违规127条，较上月+67%，根因推断：新品上线后SOP培训覆盖不足',
+      '华东区【服务板块】上海门店问题连续4周居高不下，建议发起专项整治',
+    ],
+    trends: [
+      '西南区整体风险评分从42上升至55，【食安】【清洁】两板块需重点关注',
+      '全国AI拦截率本月提升至89%，较上月+5个百分点',
+    ],
+    positives: [
+      '华北区本月零高风险异常，六大板块连续28天保持健康状态',
+      '全国整改完成率78%，较上月提升6个百分点',
+    ],
+  },
+  quarter: {
+    warnings: [
+      '华南区近三月【食安】【品质】两板块违规累计占全国总量的38%，已成为全国最高风险大区',
+      '华东区近三月整改完成率持续低于全国均值，督导资源配置可能存在问题',
+    ],
+    trends: [
+      '西南区近三月异常数量呈阶梯式上升，与门店扩张速度正相关，建议同步扩充督导团队',
+      'AI识别准确率近三月从81%提升至89%，模型持续优化中',
+    ],
+    positives: [
+      '华北区近三月整体表现最优，可作为标杆大区进行经验复制',
+      '近三月AI ROI累计节省督导人力成本约125.3万元',
+    ],
+  },
+};
+
+const QUARTER_INSIGHT_RECOMMENDS = ['special', 'resource', 'resource'];
+
+function directorInsightGroups(range) {
+  const src = AI_INSIGHTS[range];
+  return {
+    alert: src.warnings.map((text, i) => ({
+      type: 'alert',
+      text,
+      recommend: range === 'quarter' ? QUARTER_INSIGHT_RECOMMENDS[i] || null : null,
+    })),
+    trend: src.trends.map((text) => ({ type: 'trend', text })),
+    positive: src.positives.map((text) => ({ type: 'positive', text })),
+  };
+}
+
+const ZONE_AI_INSIGHTS = {
+  week: [
+    { type: 'warning', text: '深圳福田区【品质板块】本周新增11条，较上周+83%，建议立即发起专项督查', recommend: 'task' },
+    { type: 'warning', text: '广州天河区【食安板块】整改完成率仅54%，3条工单已逾期，督导响应速度需提升', recommend: 'report' },
+    { type: 'trend', text: '佛山门店【清洁板块】问题呈上升趋势，近3天连续触发预警，根因疑似新员工上岗培训不足', recommend: 'train' },
+    { type: 'positive', text: '珠海区本周六大板块全部绿色，整改完成率100%，可作为本区标杆城市', recommend: null },
+  ],
+  month: [
+    { type: 'warning', text: '深圳福田【品质板块】本月累计42条，较上月+55%，根因：新品SOP培训覆盖不足', recommend: 'train' },
+    { type: 'warning', text: '广州天河【食安板块】整改完成率本月仅58%，8条工单逾期', recommend: 'report' },
+    { type: 'trend', text: '东莞门店【目视化板块】物料陈列问题本月增长23%', recommend: 'task' },
+    { type: 'positive', text: '珠海区本月整改完成率95%，六大板块表现优异', recommend: null },
+  ],
+  quarter: [
+    { type: 'warning', text: '华南区近三月【食安】【品质】占全国38%，深圳、广州为高发城市', recommend: 'report' },
+    { type: 'warning', text: '佛山、东莞督导资源配置不足，逾期率偏高', recommend: 'task' },
+    { type: 'trend', text: '华南区门店扩张与异常数量正相关，建议同步扩充督导编制', recommend: 'train' },
+    { type: 'positive', text: '珠海区近三月零高风险异常，可作为标杆城市', recommend: null },
+  ],
+};
+
+const SUPERVISOR_PERFORMANCE = [
+  { name: '张督导', city: '深圳', handled: 28, rate: 82, overdue: 2, status: 'warning' },
+  { name: '李督导', city: '广州', handled: 22, rate: 54, overdue: 3, status: 'danger' },
+  { name: '王督导', city: '佛山', handled: 15, rate: 71, overdue: 1, status: 'warning' },
+  { name: '赵督导', city: '东莞', handled: 18, rate: 78, overdue: 0, status: 'good' },
+  { name: '刘督导', city: '珠海', handled: 12, rate: 100, overdue: 0, status: 'good' },
+];
+
+const ROLES_CONFIG = {
+  supervisor: { name: '张督导', title: '深圳区域督导', username: '督导', defaultHash: '#/supervisor/list', menu: [{ hash: '#/supervisor/list', label: '异常工单', icon: 'fa-bell', badge: true }, { hash: '#/supervisor/tracking', label: '整改跟踪', icon: 'fa-tasks' }] },
+  manager: { name: '陈经理', title: '华南大区经理', username: '区域经理', defaultHash: '#/manager/dashboard', menu: [{ hash: '#/manager/dashboard', label: '大区看板', icon: 'fa-chart-bar' }, { hash: '#/manager/anomalies', label: '区域工单', icon: 'fa-triangle-exclamation' }] },
+  director: { name: '王总监', title: '全国营运总监', username: '总监', defaultHash: '#/director/dashboard', menu: [{ hash: '#/director/dashboard', label: '全国看板', icon: 'fa-earth-asia' }] },
+};
+
+const GUIDE_STEPS = [
+  {
+    role: 'supervisor',
+    path: '#/supervisor/list',
+    icon: 'fa-bell',
+    roleLabel: '督导视角',
+    title: '异常如何被高效发现？',
+    painPoint: '营运部关注的核心不是底层数据本身，而是通过异常指标监控卡片快速定位问题。',
+    design: '基于食安/清洁/服务/目视化/品质六大板块，AI自动生成异常卡片流，每张卡片携带置信度、历史次数与建议动作，督导无需查报表即可驱动决策。',
+    color: 'border-yellow-300 bg-yellow-50',
+    iconBg: 'bg-yellow-400',
+    iconColor: 'text-gray-900',
+    btnColor: 'bg-yellow-400 hover:bg-yellow-500 text-gray-900',
+    tag: '痛点一',
+    tagColor: 'bg-yellow-100 text-yellow-700',
+  },
+  {
+    role: 'supervisor',
+    path: '#/supervisor/tracking',
+    icon: 'fa-arrow-right-arrow-left',
+    roleLabel: '督导视角',
+    title: '发现后如何真正闭环？',
+    painPoint: '发现问题后，可以提供哪些工具和机制，帮助团队快速解决问题并高效协同？',
+    design: '五步闭环链路：确认异常 → 填写整改单 → 整改中跟踪 → 督导复查 → 归档闭环。逾期工单自动红色预警，不让任何问题烂在系统里。',
+    color: 'border-blue-300 bg-blue-50',
+    iconBg: 'bg-blue-500',
+    iconColor: 'text-white',
+    btnColor: 'bg-blue-500 hover:bg-blue-600 text-white',
+    tag: '痛点二',
+    tagColor: 'bg-blue-100 text-blue-700',
+  },
+  {
+    role: 'director',
+    path: '#/director/dashboard',
+    icon: 'fa-earth-asia',
+    roleLabel: '总监视角',
+    title: '总监如何做战略决策？',
+    painPoint: '需要经过信息分析后，能够支撑战略决策的洞察——是树立新标杆？开展针对性培训？还是加大资源投入攻坚？',
+    design: 'AI洞察报告直接输出归因结论（不是数据），总监只需判断选哪个动作。五大区×六大板块热力矩阵，一眼看出哪个大区哪类问题集中爆发。',
+    color: 'border-purple-300 bg-purple-50',
+    iconBg: 'bg-purple-500',
+    iconColor: 'text-white',
+    btnColor: 'bg-purple-500 hover:bg-purple-600 text-white',
+    tag: '痛点三',
+    tagColor: 'bg-purple-100 text-purple-700',
+  },
+];
+
+const RISK_ORDER = { high: 0, medium: 1, low: 2 };
+
+function sortByRisk(list) {
+  return [...list].sort((a, b) => RISK_ORDER[a.riskLevel] - RISK_ORDER[b.riskLevel]);
+}
+
+function getRiskLabel(l) {
+  return { high: '高风险', medium: '中风险', low: '低风险' }[l];
+}
+
+function getStatusLabel(s) {
+  return { pending: '待处理', rectifying: '整改中', reviewing: '待复查', closed: '已闭环', rejected: '已驳回' }[s];
+}
+
+function getConfidenceColor(c) {
+  if (c >= 85) return 'text-green-600';
+  if (c >= 70) return 'text-orange-500';
+  return 'text-red-500';
+}
+
+function getRiskScoreLevel(score) {
+  if (score >= 70) return { label: '高风险', className: 'text-red-600 bg-red-50 border-red-200' };
+  if (score >= 45) return { label: '中风险', className: 'text-orange-600 bg-orange-50 border-orange-200' };
+  return { label: '低风险', className: 'text-blue-600 bg-blue-50 border-blue-200' };
+}
+
+function getHeatCellClass(level) {
+  return { high: 'bg-red-100 text-red-700', medium: 'bg-orange-100 text-orange-700', low: 'bg-green-100 text-green-700' }[level];
+}
+
+function getHeatLabel(level) {
+  return { high: '高', medium: '中', low: '低' }[level];
+}
+
+function getDaysRemaining(deadline) {
+  if (!deadline) return { label: '—', className: 'text-gray-400', isOverdue: false };
+  const end = new Date(deadline);
+  const diff = Math.ceil((end.getTime() - TODAY.getTime()) / 86400000);
+  if (diff < 0) return { label: `逾期${Math.abs(diff)}天`, className: 'text-red-600 bg-red-50 px-2 py-0.5 rounded', isOverdue: true };
+  if (diff === 0) return { label: '今日截止', className: 'text-orange-600 bg-orange-50 px-2 py-0.5 rounded', isOverdue: false };
+  if (diff <= 2) return { label: `剩余${diff}天`, className: 'text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded', isOverdue: false };
+  return { label: `剩余${diff}天`, className: 'text-gray-500 bg-gray-100 px-2 py-0.5 rounded', isOverdue: false };
+}
+
+function formatToday() {
+  const d = new Date();
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+function getTimeRangeLabel(range) {
+  return { week: '本周', month: '本月', quarter: '近三月' }[range];
+}
+
+function getNewAnomalyLabel(range) {
+  return { week: '本周新增异常', month: '本月新增异常', quarter: '近三月新增异常' }[range];
+}
+
+function countByStatus(list, st) {
+  return list.filter((a) => a.status === st).length;
+}
+
+function CategoryBadge({ category }) {
+  const cfg = categoryConfig[category] || categoryConfig.其他;
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded border font-medium ${cfg.bg} ${cfg.color} border-gray-200`}>
+      {category}板块
+    </span>
+  );
+}
+
+function getRecommendedIds(insights) {
+  return new Set(insights.filter((i) => i.recommend).map((i) => i.recommend));
+}
+
+function parseHash(raw) {
+  let h = (raw || '').replace(/^#/, '');
+  if (!h || h === '/') return { page: 'guide' };
+  if (!h.startsWith('/')) h = '/' + h;
+  const detail = h.match(/^\/supervisor\/detail\/(.+)$/);
+  if (detail) return { page: 'supervisor-detail', id: decodeURIComponent(detail[1]) };
+  const map = {
+    '/supervisor/list': 'supervisor-list',
+    '/supervisor/tracking': 'supervisor-tracking',
+    '/manager/dashboard': 'manager-dashboard',
+    '/manager/anomalies': 'manager-anomalies',
+    '/director/dashboard': 'director-dashboard',
+  };
+  return { page: map[h] || 'guide' };
+}
+
+function navigateTo(hash) {
+  window.location.hash = hash;
+}
+
+function useHashRoute() {
+  const [route, setRoute] = useState(() => parseHash(window.location.hash));
+  useEffect(() => {
+    const onHash = () => setRoute(parseHash(window.location.hash));
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  useEffect(() => {
+    if (!window.location.hash) {
+      window.location.replace('#/');
+    }
+  }, []);
+  return route;
+}
+
+const AppCtx = createContext(null);
+
+function AppProvider({ children }) {
+  const [role, setRole] = useState('supervisor');
+  const [timeRange, setTimeRange] = useState('quarter');
+  const [anomalies, setAnomalies] = useState(INITIAL_ANOMALIES);
+  const updateAnomaly = useCallback((id, patch) => {
+    setAnomalies((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  }, []);
+  const setAnomalyStatus = useCallback(
+    (id, status, extra) => updateAnomaly(id, { status, ...extra }),
+    [updateAnomaly],
+  );
+  const pendingCount = useMemo(() => anomalies.filter((a) => a.status === 'pending').length, [anomalies]);
+  const value = useMemo(
+    () => ({ role, timeRange, anomalies, setRole, setTimeRange, updateAnomaly, setAnomalyStatus, pendingCount }),
+    [role, timeRange, anomalies, updateAnomaly, setAnomalyStatus, pendingCount],
+  );
+  return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
+}
+
+function useApp() {
+  const c = useContext(AppCtx);
+  if (!c) throw new Error('useApp');
+  return c;
+}
+
+function RiskBadge({ level }) {
+  const rs = { high: 'text-red-600 bg-red-50 border-red-200', medium: 'text-orange-600 bg-orange-50 border-orange-200', low: 'text-blue-600 bg-blue-50 border-blue-200' };
+  const dot = { high: 'bg-red-500', medium: 'bg-orange-400', low: 'bg-blue-400' };
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${rs[level]}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${dot[level]}`} />
+      {getRiskLabel(level)}
+    </span>
+  );
+}
+
+function StatusBadge({ status }) {
+  const st = { pending: 'text-red-600 bg-red-50', rectifying: 'text-orange-600 bg-orange-50', reviewing: 'text-purple-600 bg-purple-50', closed: 'text-green-600 bg-green-50', rejected: 'text-gray-500 bg-gray-100' };
+  return <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${st[status]}`}>{getStatusLabel(status)}</span>;
+}
+
+function TimeRangeSwitcher() {
+  const { timeRange, setTimeRange } = useApp();
+  const opts = [
+    { key: 'week', label: '本周' },
+    { key: 'month', label: '本月' },
+    { key: 'quarter', label: '近三月' },
+  ];
+  return (
+    <div className="flex bg-gray-200 rounded-lg p-1 gap-1">
+      {opts.map((o) => (
+        <button key={o.key} type="button" onClick={() => setTimeRange(o.key)} className={`px-3 py-1.5 text-sm rounded-md transition-all ${timeRange === o.key ? 'bg-white text-gray-900 shadow-sm font-medium' : 'text-gray-600 hover:text-gray-900'}`}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Sidebar() {
+  const { role, setRole, pendingCount } = useApp();
+  const cfg = ROLES_CONFIG[role];
+  const switchRole = (r) => {
+    setRole(r);
+    navigateTo(ROLES_CONFIG[r].defaultHash);
+  };
+  return (
+    <aside className="w-56 bg-gray-900 text-gray-300 flex flex-col flex-shrink-0 min-h-screen">
+      <div className="p-4 border-b border-gray-800">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-yellow-400 rounded-lg flex items-center justify-center flex-shrink-0">
+            <i className="fas fa-lemon text-gray-900 text-lg" />
+          </div>
+          <div>
+            <h1 className="text-white font-bold text-sm">林立柠檬茶</h1>
+            <p className="text-gray-500 text-xs">营运 AI 管理平台</p>
+          </div>
+        </div>
+      </div>
+      <div className="px-3 pb-2">
+        <button type="button" onClick={() => navigateTo('#/')} className="w-full text-xs py-2 rounded-lg border border-gray-700 text-gray-400 hover:border-yellow-400 hover:text-yellow-400 transition-colors">
+          <i className="fas fa-arrow-left mr-1" /> 返回引导页
+        </button>
+      </div>
+      <div className="p-3 pt-0">
+        <div className="flex gap-1">
+          {[
+            ['supervisor', ROLES_CONFIG.supervisor.username],
+            ['manager', ROLES_CONFIG.manager.username],
+            ['director', ROLES_CONFIG.director.username],
+          ].map(([k, lab]) => (
+            <button key={k} type="button" onClick={() => switchRole(k)} className={`flex-1 py-1.5 text-xs rounded font-medium transition-colors ${role === k ? 'bg-yellow-400 text-gray-900' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
+              {lab}
+            </button>
+          ))}
+        </div>
+      </div>
+      <nav className="flex-1 px-3 space-y-1">
+        {cfg.menu.map((item) => {
+          const active = window.location.hash === item.hash;
+          return (
+            <a key={item.hash} href={item.hash} className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-colors ${active ? 'bg-gray-800 text-yellow-400' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
+              <span className="flex items-center gap-2">
+                <i className={`fas ${item.icon} w-4`} />
+                {item.label}
+              </span>
+              {item.badge && pendingCount > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full min-w-[20px] text-center">{pendingCount}</span>}
+            </a>
+          );
+        })}
+      </nav>
+      <div className="p-4 border-t border-gray-800">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-gray-700 flex items-center justify-center">
+            <i className="fas fa-user text-gray-400 text-sm" />
+          </div>
+          <div>
+            <p className="text-white text-sm font-medium">{cfg.name}</p>
+            <p className="text-gray-500 text-xs">{cfg.title}</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function CssBarChart({ data }) {
+  const max = Math.max(...data.map((d) => d.value), 1);
+  return (
+    <div className="h-44 px-2 border-b border-gray-200">
+      <div className="flex items-end justify-between gap-1 h-32 mb-1">
+        {data.map((d) => (
+          <div key={d.label} className="flex-1 h-full flex flex-col justify-end items-stretch min-w-0">
+            <div className="w-full bg-blue-500 rounded-t transition-all" style={{ height: `${(d.value / max) * 100}%`, minHeight: d.value ? 4 : 0 }} title={String(d.value)} />
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between gap-1 text-[10px] text-gray-500">
+        {data.map((d) => (
+          <span key={`l-${d.label}`} className="flex-1 text-center truncate min-w-0">
+            {d.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SvgLineChart({ data }) {
+  const w = 320;
+  const h = 140;
+  const pad = 16;
+  const max = Math.max(...data.map((d) => d.value), 0.1);
+  const coords = data.map((d, i) => {
+    const x = pad + (i / Math.max(data.length - 1, 1)) * (w - pad * 2);
+    const y = h - pad - (d.value / max) * (h - pad * 2);
+    return { x, y, label: d.label };
+  });
+  const poly = coords.map((p) => `${p.x},${p.y}`).join(' ');
+  const area = `${coords.map((p) => `${p.x},${p.y}`).join(' ')} ${coords[coords.length - 1].x},${h - pad} ${coords[0].x},${h - pad}`;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-40">
+      <defs>
+        <linearGradient id="savedGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#facc15" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#facc15" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon fill="url(#savedGrad)" points={area} />
+      <polyline fill="none" stroke="#facc15" strokeWidth="2.5" points={poly} />
+      {coords.map((p) => (
+        <circle key={p.label} cx={p.x} cy={p.y} r="4" fill="#ca8a04" />
+      ))}
+    </svg>
+  );
+}
+
+function AnomalyCard({ anomaly, showCity, showActions, onReject }) {
+  const days = getDaysRemaining(anomaly.deadline);
+  const catCfg = categoryConfig[anomaly.category] || categoryConfig.其他;
+  const { setAnomalyStatus } = useApp();
+  const goDetail = (e) => {
+    if (e) e.stopPropagation();
+    navigateTo(`#/supervisor/detail/${anomaly.id}`);
+  };
+  return (
+    <div role="button" tabIndex={0} onClick={goDetail} onKeyDown={(e) => e.key === 'Enter' && goDetail()} className={`bg-white border rounded-xl p-4 cursor-pointer transition-all hover:border-yellow-300 hover:shadow-md ${days.isOverdue && anomaly.status === 'rectifying' ? 'bg-red-50 border-red-300' : 'border-gray-200'}`}>
+      <div className="flex gap-4">
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${catCfg.bg}`}>
+          <i className={`fas ${catCfg.icon} ${catCfg.color}`} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <RiskBadge level={anomaly.riskLevel} />
+            <StatusBadge status={anomaly.status} />
+            <CategoryBadge category={anomaly.category} />
+            {showCity && <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{anomaly.storeCity}</span>}
+          </div>
+          <h3 className="font-bold text-gray-900">{anomaly.storeName}</h3>
+          <p className="text-sm text-gray-600">{anomaly.anomalyType}</p>
+          {showCity && <p className="text-xs text-gray-400 mt-1">负责督导：{anomaly.assignee}</p>}
+          {anomaly.historicalCount > 0 && (
+            <p className="text-xs text-orange-500 mt-1 font-medium">
+              <i className="fas fa-history mr-1" />
+              近30天第{anomaly.historicalCount + 1}次
+            </p>
+          )}
+        </div>
+        <div className="text-right flex-shrink-0">
+          <p className={`text-lg font-bold ${getConfidenceColor(anomaly.confidence)}`}>{anomaly.confidence}%</p>
+          <p className="text-xs text-gray-400">AI 置信度</p>
+          <p className="text-sm text-gray-500 mt-2">{anomaly.triggeredAt} 触发</p>
+        </div>
+      </div>
+      {showActions && anomaly.status === 'pending' && (
+        <div className="flex mt-4 bg-yellow-400" onClick={(e) => e.stopPropagation()}>
+          <button type="button" onClick={goDetail} className="flex-[2] text-gray-900 font-medium py-2.5 text-sm hover:bg-yellow-500">
+            <i className="fas fa-check mr-1" />
+            确认处理
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAnomalyStatus(anomaly.id, 'rejected');
+              onReject?.(anomaly.id);
+            }}
+            className="flex-1 bg-white/90 hover:bg-white text-gray-700 py-2.5 text-sm border-l border-yellow-500"
+          >
+            <i className="fas fa-times mr-1" />
+            标记误判
+          </button>
+        </div>
+      )}
+      {anomaly.status === 'rectifying' && anomaly.deadline && !showActions && (
+        <p className="text-xs text-orange-600 mt-3 pt-2 border-t border-gray-100">
+          <i className="fa-regular fa-calendar-days mr-1" />
+          整改截止：{anomaly.deadline}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function AnomalyListPage() {
+  const { anomalies } = useApp();
+  const [tab, setTab] = useState('pending');
+  const [categoryFilter, setCategoryFilter] = useState('全部');
+  const TABS = [
+    { key: 'pending', label: '待处理' },
+    { key: 'rectifying', label: '整改中' },
+    { key: 'closed', label: '已闭环' },
+    { key: 'all', label: '全部' },
+  ];
+  const filtered = useMemo(() => {
+    let list = anomalies;
+    if (tab === 'closed') list = anomalies.filter((a) => a.status === 'closed');
+    else if (tab !== 'all') list = anomalies.filter((a) => a.status === tab);
+    if (categoryFilter !== '全部') list = list.filter((a) => a.category === categoryFilter);
+    return sortByRisk(list);
+  }, [anomalies, tab, categoryFilter]);
+  const pending = countByStatus(anomalies, 'pending');
+  const rectifying = countByStatus(anomalies, 'rectifying');
+  const closed = countByStatus(anomalies, 'closed');
+  const tabCount = (key) => {
+    if (key === 'all') return anomalies.length;
+    if (key === 'closed') return countByStatus(anomalies, 'closed');
+    return countByStatus(anomalies, key);
+  };
+  return (
+    <div className="p-6 max-w-5xl mx-auto">
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">异常工单</h1>
+          <p className="text-gray-500 text-sm mt-1">今日 AI 识别异常，需督导确认处理</p>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-green-600">
+          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+          AI 识别引擎运行中
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="rounded-xl border p-4 border-red-200 bg-red-50 relative">
+          <i className="fas fa-bell text-red-400 absolute top-4 right-4" />
+          <p className="text-3xl font-bold text-red-600">{pending}</p>
+          <p className="font-medium text-gray-900 mt-1">待处理</p>
+          <p className="text-xs text-gray-500">需立即处理</p>
+        </div>
+        <div className="rounded-xl border p-4 border-orange-200 bg-orange-50 relative">
+          <i className="fas fa-clock text-orange-400 absolute top-4 right-4" />
+          <p className="text-3xl font-bold text-orange-600">{rectifying}</p>
+          <p className="font-medium text-gray-900 mt-1">整改中</p>
+          <p className="text-xs text-gray-500">跟踪整改进度</p>
+        </div>
+        <div className="rounded-xl border p-4 border-green-200 bg-green-50 relative">
+          <i className="fas fa-check-circle text-green-500 absolute top-4 right-4" />
+          <p className="text-3xl font-bold text-green-600">{closed}</p>
+          <p className="font-medium text-gray-900 mt-1">已闭环</p>
+          <p className="text-xs text-gray-500">今日完成</p>
+        </div>
+      </div>
+      <div className="flex border-b border-gray-200 mb-4 gap-6">
+        {TABS.map((t) => (
+          <button key={t.key} type="button" onClick={() => setTab(t.key)} className={`pb-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${tab === t.key ? 'border-yellow-400 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {t.label}
+            <span className={`text-xs px-1.5 py-0.5 rounded ${tab === t.key ? 'bg-yellow-400 text-gray-900' : 'bg-gray-200 text-gray-600'}`}>{tabCount(t.key)}</span>
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {CATEGORY_FILTERS.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => setCategoryFilter(s.key)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-colors ${
+              categoryFilter === s.key ? s.active : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <i className={`fas ${s.icon} text-xs`} />
+            {s.key}
+          </button>
+        ))}
+      </div>
+      <div className="space-y-3">
+        {filtered.map((a) => (
+          <AnomalyCard key={a.id} anomaly={a} showActions={a.status === 'pending'} />
+        ))}
+        {filtered.length === 0 && <p className="text-center text-gray-400 py-12">暂无工单</p>}
+      </div>
+    </div>
+  );
+}
+
+const REJECT_REASONS = ['光线/角度导致误识别', '正在执行中被截帧', '新版SOP已更新标准', '其他原因'];
+
+function AnomalyDetailPage({ id }) {
+  const { anomalies, setAnomalyStatus } = useApp();
+  const anomaly = anomalies.find((a) => a.id === id);
+  const [showRectifyForm, setShowRectifyForm] = useState(false);
+  const [showRejectForm, setShowRejectForm] = useState(false);
+  const [deadline, setDeadline] = useState('2026-05-22');
+  const [rectNote, setRectNote] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
+  const [success, setSuccess] = useState('');
+
+  if (!anomaly) {
+    return (
+      <div className="p-6 text-center text-gray-500">
+        工单不存在
+        <button type="button" onClick={() => navigateTo('#/supervisor/list')} className="block mx-auto mt-4 text-yellow-600">
+          返回列表
+        </button>
+      </div>
+    );
+  }
+
+  const handleRectify = () => {
+    setAnomalyStatus(anomaly.id, 'rectifying', { deadline, rectificationNote: rectNote || '已下发整改要求' });
+    setSuccess('整改单已下发');
+    setTimeout(() => navigateTo('#/supervisor/tracking'), 1200);
+  };
+  const handleReject = () => {
+    setAnomalyStatus(anomaly.id, 'rejected');
+    setSuccess('已标记为 AI 误判');
+    setTimeout(() => navigateTo('#/supervisor/list'), 1200);
+  };
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <button type="button" onClick={() => navigateTo('#/supervisor/list')} className="w-9 h-9 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-100">
+            <i className="fas fa-arrow-left text-gray-600" />
+          </button>
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">{anomaly.storeName}</h1>
+            <p className="text-sm text-gray-500">工单号 {anomaly.id}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <RiskBadge level={anomaly.riskLevel} />
+          <CategoryBadge category={anomaly.category} />
+        </div>
+      </div>
+      {success && (
+        <div className="mb-4 bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
+            <i className="fas fa-check text-white" />
+          </div>
+          <span className="text-green-700 font-medium">{success}</span>
+        </div>
+      )}
+      <div className="grid grid-cols-5 gap-6">
+        <div className="col-span-3 space-y-4">
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+              <h2 className="font-semibold text-gray-900">AI 识别截图</h2>
+              <span className={`text-sm font-bold ${getConfidenceColor(anomaly.confidence)}`}>置信度 {anomaly.confidence}%</span>
+            </div>
+            <div className="relative bg-gray-800 h-56 flex items-center justify-center">
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-28 border-2 border-dashed border-red-500 detect-box">
+                <span className="absolute -top-6 left-0 text-xs text-red-400 bg-red-900/80 px-2 py-0.5 rounded">异常行为检测</span>
+                <span className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-red-400" />
+                <span className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-red-400" />
+                <span className="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-red-400" />
+                <span className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-red-400" />
+              </div>
+              <div className="absolute bottom-3 left-3 flex gap-2">
+                <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">CAM-03</span>
+                <span className="text-xs bg-red-600 text-white px-2 py-1 rounded animate-pulse">异常帧</span>
+              </div>
+            </div>
+            <div className="p-4 bg-gray-50 text-sm text-gray-600">{anomaly.description}</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <h2 className="font-semibold text-gray-900 mb-3">历史违规记录</h2>
+            {anomaly.historicalCount === 0 ? (
+              <p className="text-green-600 text-sm">
+                <i className="fas fa-check-circle mr-2" />
+                近30天无同类违规记录
+              </p>
+            ) : (
+              <div>
+                <p className="text-sm text-gray-700 mb-2">
+                  近30天同类违规 <strong>{anomaly.historicalCount}</strong> 次（含本次第{anomaly.historicalCount + 1} 次）
+                </p>
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-2">
+                  <div className="h-full bg-orange-400 rounded-full" style={{ width: `${Math.min(anomaly.historicalCount * 20, 100)}%` }} />
+                </div>
+                <p className="text-xs text-orange-600">
+                  <i className="fas fa-exclamation-triangle mr-1" />
+                  存在重复违规风险
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="col-span-2 space-y-4">
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <h2 className="font-semibold text-gray-900 mb-3">工单信息</h2>
+            <ul className="space-y-3">
+              {[
+                ['fa-store', '门店', anomaly.storeName],
+                ['fa-map-marker-alt', '区域', `${anomaly.storeCity} · ${anomaly.storeRegion}`],
+                ['fa-user', '负责督导', anomaly.assignee],
+                ['fa-clock', '触发时间', anomaly.triggeredAt],
+                ['fa-tag', '异常类型', anomaly.anomalyType],
+              ].map(([ic, lb, val]) => (
+                <li key={lb} className="flex items-start gap-3 text-sm">
+                  <i className={`fas ${ic} text-gray-400 w-4 mt-0.5`} />
+                  <span className="text-gray-500 w-16">{lb}</span>
+                  <span className="text-gray-900 flex-1">{val}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          {anomaly.status === 'pending' ? (
+            <div className="bg-white border border-gray-200 rounded-xl p-4">
+              <h2 className="font-semibold text-gray-900 mb-3">处理操作</h2>
+              {!showRectifyForm && !showRejectForm && (
+                <div className="space-y-2">
+                  <button type="button" onClick={() => { setShowRectifyForm(true); setShowRejectForm(false); }} className="w-full bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-medium py-2.5 rounded-lg">
+                    确认异常，下发整改单
+                  </button>
+                  <button type="button" onClick={() => { setShowRejectForm(true); setShowRectifyForm(false); }} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-lg">
+                    标记为 AI 误判
+                  </button>
+                </div>
+              )}
+              {showRectifyForm && (
+                <div className="space-y-3">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">确认后将自动生成整改单并推送给店长</div>
+                  <label className="block text-sm text-gray-600">
+                    整改截止日期
+                    <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2" />
+                  </label>
+                  <label className="block text-sm text-gray-600">
+                    整改要求说明
+                    <textarea rows={3} value={rectNote} onChange={(e) => setRectNote(e.target.value)} className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 resize-none" placeholder="请描述整改要求..." />
+                  </label>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={handleRectify} className="flex-1 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-medium py-2 rounded-lg">
+                      确认下发
+                    </button>
+                    <button type="button" onClick={() => setShowRectifyForm(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 py-2 rounded-lg">
+                      取消
+                    </button>
+                  </div>
+                </div>
+              )}
+              {showRejectForm && (
+                <div className="space-y-3">
+                  <div className="bg-gray-100 border border-gray-200 rounded-lg p-3 text-sm text-gray-700">驳回记录将用于优化 AI 识别模型</div>
+                  {REJECT_REASONS.map((r) => (
+                    <label key={r} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="radio" name="reason" checked={rejectReason === r} onChange={() => setRejectReason(r)} className="text-yellow-500" />
+                      {r}
+                    </label>
+                  ))}
+                  <div className="flex gap-2">
+                    <button type="button" disabled={!rejectReason} onClick={handleReject} className="flex-1 bg-gray-700 hover:bg-gray-800 disabled:opacity-40 text-white py-2 rounded-lg">
+                      确认驳回
+                    </button>
+                    <button type="button" onClick={() => setShowRejectForm(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 py-2 rounded-lg">
+                      取消
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white border border-gray-200 rounded-xl p-4">
+              <h2 className="font-semibold text-gray-900 mb-3">整改信息</h2>
+              {anomaly.deadline && (
+                <p className="text-sm text-gray-600 mb-2">
+                  <i className="fa-regular fa-calendar mr-2" />
+                  截止日期：{anomaly.deadline}
+                </p>
+              )}
+              <p className="text-sm text-gray-600">{anomaly.rectificationNote || '暂无整改说明'}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TrackingCard({ anomaly, onReview, onClose, onDetail }) {
+  const days = getDaysRemaining(anomaly.deadline);
+  const map = {
+    rectifying: { bg: 'bg-orange-100', icon: 'fa-hourglass-half text-orange-500' },
+    reviewing: { bg: 'bg-purple-100', icon: 'fa-search text-purple-500' },
+    closed: { bg: 'bg-green-100', icon: 'fa-check text-green-500' },
+    rejected: { bg: 'bg-gray-100', icon: 'fa-times text-gray-500' },
+    pending: { bg: 'bg-gray-100', icon: 'fa-clock text-gray-500' },
+  };
+  const icon = map[anomaly.status] || map.pending;
+  return (
+    <li className={`bg-white border rounded-xl p-4 ${days.isOverdue && anomaly.status === 'rectifying' ? 'bg-red-50 border-red-300' : 'border-gray-200'}`}>
+      <article className="flex gap-4">
+        <span className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${icon.bg}`}>
+          <i className={`fas ${icon.icon}`} />
+        </span>
+        <section className="flex-1">
+          <h3 className="font-bold text-gray-900">
+            {anomaly.storeName} <span className="text-gray-400 font-normal text-sm">{anomaly.id}</span>
+          </h3>
+          <p className="text-sm text-gray-600">{anomaly.anomalyType}</p>
+          {anomaly.rectificationNote && <p className="text-xs text-gray-500 bg-gray-100 inline-block px-2 py-1 rounded mt-2">{anomaly.rectificationNote}</p>}
+        </section>
+        <aside className="text-right flex-shrink-0">
+          {anomaly.deadline && (
+            <>
+              <span className={`text-xs font-medium ${days.className}`}>{days.label}</span>
+              <p className="text-xs text-gray-400 mt-1">截止 {anomaly.deadline}</p>
+            </>
+          )}
+        </aside>
+      </article>
+      <footer className="flex gap-2 mt-4 pt-3 border-t border-gray-100">
+        {anomaly.status === 'rectifying' && (
+          <>
+            <button type="button" onClick={onReview} className="flex-1 bg-purple-500 hover:bg-purple-600 text-white py-2 rounded-lg text-sm">
+              标记已整改，发起复查
+            </button>
+            <button type="button" onClick={onDetail} className="px-4 bg-gray-100 hover:bg-gray-200 py-2 rounded-lg text-sm">
+              查看详情
+            </button>
+          </>
+        )}
+        {anomaly.status === 'reviewing' && (
+          <>
+            <button type="button" onClick={onClose} className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg text-sm">
+              复查通过，闭环归档
+            </button>
+            <button type="button" onClick={onDetail} className="px-4 bg-gray-100 hover:bg-gray-200 py-2 rounded-lg text-sm">
+              查看详情
+            </button>
+          </>
+        )}
+        {(anomaly.status === 'closed' || anomaly.status === 'rejected') && (
+          <p className="text-sm text-gray-500 w-full">{anomaly.status === 'closed' ? '已归档：整改完成，复查通过' : `已归档：${getStatusLabel(anomaly.status)}`}</p>
+        )}
+      </footer>
+    </li>
+  );
+}
+
+function TrackingPage() {
+  const { anomalies, setAnomalyStatus } = useApp();
+  const [tab, setTab] = useState('rectifying');
+  const TABS = [
+    { key: 'rectifying', label: '整改中' },
+    { key: 'reviewing', label: '待复查' },
+    { key: 'closed', label: '已闭环' },
+  ];
+  const trackingList = anomalies.filter((a) => ['rectifying', 'reviewing', 'closed', 'rejected'].includes(a.status));
+  const overdueCount = anomalies.filter((a) => a.status === 'rectifying' && a.deadline && getDaysRemaining(a.deadline).isOverdue).length;
+  const filtered = useMemo(() => {
+    if (tab === 'closed') return trackingList.filter((a) => a.status === 'closed' || a.status === 'rejected');
+    return trackingList.filter((a) => a.status === tab);
+  }, [trackingList, tab]);
+  const tabCount = (key) => {
+    if (key === 'closed') return countByStatus(anomalies, 'closed') + countByStatus(anomalies, 'rejected');
+    return countByStatus(anomalies, key);
+  };
+  return (
+    <div className="p-6 max-w-5xl mx-auto">
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">整改跟踪</h1>
+        <p className="text-gray-500 text-sm mt-1">跟踪门店整改进度，确保异常闭环</p>
+      </header>
+      {overdueCount > 0 && (
+        <div className="mb-4 flex items-center gap-2 bg-red-600 text-white text-sm px-4 py-3 rounded-lg">
+          <i className="fas fa-exclamation-triangle" />
+          <span>
+            <strong>逾期预警：</strong>当前有 {overdueCount} 个整改工单已超过截止日期，请立即跟进处理
+          </span>
+        </div>
+      )}
+      <section className="grid grid-cols-3 gap-4 mb-6">
+        <article className="rounded-xl border p-4 bg-orange-50 border-orange-200">
+          <p className="text-3xl font-bold text-orange-600">{countByStatus(anomalies, 'rectifying')}</p>
+          <p className="font-medium text-gray-900 mt-1">整改中</p>
+        </article>
+        <article className="rounded-xl border p-4 bg-purple-50 border-purple-200">
+          <p className="text-3xl font-bold text-purple-600">{countByStatus(anomalies, 'reviewing')}</p>
+          <p className="font-medium text-gray-900 mt-1">待复查</p>
+        </article>
+        <article className="rounded-xl border p-4 bg-green-50 border-green-200">
+          <p className="text-3xl font-bold text-green-600">{countByStatus(anomalies, 'closed')}</p>
+          <p className="font-medium text-gray-900 mt-1">已闭环</p>
+        </article>
+      </section>
+      <nav className="flex border-b border-gray-200 mb-4 gap-6">
+        {TABS.map((t) => (
+          <button key={t.key} type="button" onClick={() => setTab(t.key)} className={`pb-3 text-sm font-medium flex items-center gap-2 border-b-2 ${tab === t.key ? 'border-yellow-400 text-gray-900' : 'border-transparent text-gray-500'}`}>
+            {t.label}
+            <span className={`text-xs px-1.5 py-0.5 rounded ${tab === t.key ? 'bg-yellow-400 text-gray-900' : 'bg-gray-200'}`}>{tabCount(t.key)}</span>
+          </button>
+        ))}
+      </nav>
+      <ul className="space-y-3">
+        {filtered.map((a) => (
+          <TrackingCard key={a.id} anomaly={a} onReview={() => setAnomalyStatus(a.id, 'reviewing')} onClose={() => setAnomalyStatus(a.id, 'closed')} onDetail={() => navigateTo(`#/supervisor/detail/${a.id}`)} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ManagerKpiCard({ icon, label, value, unit, color, sub }) {
+  return (
+    <article className="bg-white border border-gray-200 rounded-xl p-4 relative">
+      {icon && <i className={`fas ${icon} absolute top-4 right-4 text-lg opacity-70 ${color}`} />}
+      <p className={`text-2xl font-bold ${color}`}>
+        {value}
+        {unit && <span className="text-sm font-normal ml-1">{unit}</span>}
+      </p>
+      <p className="text-sm text-gray-600 mt-1">{label}</p>
+      {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+    </article>
+  );
+}
+
+function ManagerActionCard({ color, icon, title, desc, reason, highlighted, done, onConfirm }) {
+  const [confirming, setConfirming] = useState(false);
+  const colors = { blue: 'bg-blue-50 border-blue-200 text-blue-600', purple: 'bg-purple-50 border-purple-200 text-purple-600', orange: 'bg-orange-50 border-orange-200 text-orange-600' };
+  return (
+    <article className={`border rounded-xl p-4 ${colors[color]} ${highlighted ? 'ring-2 ring-yellow-400 shadow-md' : ''}`}>
+      {highlighted && <span className="text-xs bg-yellow-400 text-gray-900 px-2 py-0.5 rounded font-medium mb-2 inline-block">AI 推荐</span>}
+      <i className={`fas ${icon} text-2xl mb-2`} />
+      <h3 className="font-semibold text-gray-900">{title}</h3>
+      <p className="text-xs text-gray-600 mt-1">{desc}</p>
+      {reason && <p className="text-xs text-gray-500 mt-1 mb-3 italic">判定依据：{reason}</p>}
+      {done ? (
+        <p className="text-sm text-green-600 font-medium">已发起，执行中</p>
+      ) : confirming ? (
+        <div className="flex gap-2">
+          <button type="button" onClick={() => { onConfirm(); setConfirming(false); }} className="flex-1 bg-gray-800 text-white text-sm py-1.5 rounded">
+            确认
+          </button>
+          <button type="button" onClick={() => setConfirming(false)} className="flex-1 bg-white text-sm py-1.5 rounded border">
+            取消
+          </button>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setConfirming(true)} className="w-full bg-white border text-sm py-1.5 rounded-lg hover:bg-gray-50">
+          执行
+        </button>
+      )}
+    </article>
+  );
+}
+
+function ManagerDashboardPage() {
+  const { timeRange } = useApp();
+  const stats = SOUTH_CHINA_STATS[timeRange];
+  const insights = ZONE_AI_INSIGHTS[timeRange];
+  const cities = REGION_DATA.find((r) => r.zone === '华南').cities;
+  const [actionDone, setActionDone] = useState({});
+  const insightStyle = {
+    warning: { bg: 'bg-red-50 border-red-100', icon: 'fa-exclamation-circle text-red-500' },
+    alert: { bg: 'bg-red-50 border-red-100', icon: 'fa-exclamation-circle text-red-500' },
+    trend: { bg: 'bg-orange-50 border-orange-100', icon: 'fa-chart-line text-orange-500' },
+    positive: { bg: 'bg-green-50 border-green-100', icon: 'fa-check-circle text-green-500' },
+  };
+  return (
+    <div className="p-6">
+      <header className="flex items-start justify-between mb-6">
+        <section>
+          <h1 className="text-2xl font-bold text-gray-900">华南大区看板</h1>
+          <p className="text-sm text-gray-500 mt-1">华南区 · 218 家门店 · 12 名督导 · 2026-05-19</p>
+        </section>
+        <TimeRangeSwitcher />
+      </header>
+      <section className="grid grid-cols-4 gap-4 mb-6">
+        <ManagerKpiCard icon="fa-bell" label={`${getTimeRangeLabel(timeRange)}新增异常`} value={stats.newCount} unit="条" color="text-red-600" sub="需督导处理" />
+        <ManagerKpiCard icon="fa-clock" label="整改完成率" value={`${stats.completionRate}%`} color={stats.completionRate < 75 ? 'text-orange-500' : 'text-green-600'} sub="低于全国平均" />
+        <ManagerKpiCard icon="fa-exclamation-circle" label="逾期未处理" value={stats.overdue} unit="条" color="text-orange-500" sub="需重点跟进" />
+        <ManagerKpiCard icon="fa-robot" label="AI 拦截违规" value={stats.intercepted} unit="条" color="text-blue-600" sub={`节省约 ${Math.round(stats.intercepted * 0.5)} 人天`} />
+      </section>
+      <section className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+        <h2 className="font-semibold text-gray-900">AI 大区洞察</h2>
+        <p className="text-xs text-gray-500 mb-3">华南区 · {getTimeRangeLabel(timeRange)}数据分析</p>
+        <ul className="space-y-2">
+          {insights.map((item, i) => {
+            const s = insightStyle[item.type];
+            return (
+              <li key={i} className={`flex gap-3 p-3 rounded-lg border ${s.bg}`}>
+                <i className={`fas ${s.icon} mt-0.5`} />
+                <span className="text-sm text-gray-700 flex-1">{item.text}</span>
+                {item.recommend && (
+                  <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded whitespace-nowrap">
+                    建议→{item.recommend === 'train' ? '触发培训' : item.recommend === 'task' ? '下派任务' : '上报总监'}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+      <section className="grid grid-cols-2 gap-6 mb-6">
+        <article className="bg-white border border-gray-200 rounded-xl p-4">
+          <h2 className="font-semibold text-gray-900 mb-4">城市风险排名</h2>
+          <ul className="space-y-3">
+            {cities.map((city, i) => {
+              const level = getRiskScoreLevel(city.score);
+              return (
+                <li key={city.name} className="flex items-center gap-3">
+                  <span className={`w-6 text-sm font-bold ${i === 0 ? 'text-red-600' : 'text-gray-400'}`}>{i + 1}</span>
+                  <span className="w-12 text-sm text-gray-900">{city.name}</span>
+                  <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <span className="block h-full bg-red-400 rounded-full" style={{ width: `${city.score}%` }} />
+                  </div>
+                  <span className="text-sm font-medium w-8">{city.score}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded border ${level.className}`}>{level.label}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </article>
+        <article className="bg-white border border-gray-200 rounded-xl p-4">
+          <h2 className="font-semibold text-gray-900 mb-4">督导绩效概览</h2>
+          <ul className="space-y-2">
+            {SUPERVISOR_PERFORMANCE.map((s) => {
+              const rowBg = s.status === 'danger' ? 'bg-red-50' : s.status === 'warning' ? 'bg-orange-50' : 'bg-gray-50';
+              const dot = s.status === 'danger' ? 'bg-red-500' : s.status === 'warning' ? 'bg-orange-400' : 'bg-green-500';
+              return (
+                <li key={s.name} className={`flex items-center gap-2 p-2 rounded-lg text-sm ${rowBg}`}>
+                  <span className={`w-2 h-2 rounded-full ${dot}`} />
+                  <span className="w-14 font-medium">{s.name}</span>
+                  <span className="text-gray-500 w-10">{s.city}</span>
+                  <span className="flex-1">处理 {s.handled} 条</span>
+                  <span className={s.rate >= 80 ? 'text-green-600' : s.rate >= 60 ? 'text-orange-500' : 'text-red-500'}>{s.rate}%</span>
+                  {s.overdue > 0 && <span className="text-red-500 text-xs">逾期{s.overdue}</span>}
+                </li>
+              );
+            })}
+          </ul>
+        </article>
+      </section>
+      <section className="bg-white border border-gray-200 rounded-xl p-4 mb-6 overflow-x-auto">
+        <h2 className="font-semibold text-gray-900 mb-3">城市 × 六大板块热力分布</h2>
+        <table className="w-full text-sm">
+          <thead>
+            <tr>
+              <th className="text-left py-2 text-gray-500">城市</th>
+              {PROBLEM_TYPES.map((p) => (
+                <th key={p} className="py-2 text-gray-500 font-normal text-xs px-1">
+                  {p.slice(0, 4)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {cities.map((c) => {
+              const heat = CITY_HEAT_DATA[c.name] || ['low', 'low', 'low', 'low', 'low', 'low'];
+              return (
+                <tr key={c.name}>
+                  <td className="py-2 font-medium">{c.name}</td>
+                  {heat.map((level, i) => (
+                    <td key={i} className="p-1">
+                      <span className={`block text-center py-1 rounded text-xs ${getHeatCellClass(level)}`}>{getHeatLabel(level)}</span>
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </section>
+      <section className="bg-white border border-gray-200 rounded-xl p-4">
+        <header className="mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">区域经理操作</h2>
+          <p className="text-sm text-gray-500 mt-1">基于 AI 洞察结论，选择干预动作（系统已标注推荐项）</p>
+        </header>
+        <div className="grid grid-cols-3 gap-4">
+          {MANAGER_ACTIONS.map((a) => (
+            <ManagerActionCard
+              key={a.id}
+              color={a.color}
+              icon={a.icon}
+              title={a.title}
+              desc={a.desc}
+              reason={a.reason}
+              highlighted={a.recommend}
+              done={actionDone[a.id]}
+              onConfirm={() => setActionDone((p) => ({ ...p, [a.id]: true }))}
+            />
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ManagerAnomaliesPage() {
+  const { anomalies } = useApp();
+  const [city, setCity] = useState('全部城市');
+  const CITIES = ['全部城市', '深圳', '广州', '佛山', '东莞', '珠海'];
+  const southList = anomalies.filter((a) => a.storeZone === '华南');
+  const filtered = useMemo(() => {
+    const list = city === '全部城市' ? southList : southList.filter((a) => a.storeCity === city);
+    return sortByRisk(list);
+  }, [southList, city]);
+  return (
+    <div className="p-6 max-w-5xl mx-auto">
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">区域工单</h1>
+        <p className="text-gray-500 text-sm mt-1">华南大区 · 全部门店异常工单汇总</p>
+      </header>
+      <section className="grid grid-cols-3 gap-4 mb-6">
+        <article className="rounded-xl border p-4 text-red-600 bg-red-50 border-red-200">
+          <p className="text-3xl font-bold">{countByStatus(southList, 'pending')}</p>
+          <p className="text-sm text-gray-700 mt-1">待处理</p>
+        </article>
+        <article className="rounded-xl border p-4 text-orange-600 bg-orange-50 border-orange-200">
+          <p className="text-3xl font-bold">{countByStatus(southList, 'rectifying')}</p>
+          <p className="text-sm text-gray-700 mt-1">整改中</p>
+        </article>
+        <article className="rounded-xl border p-4 text-green-600 bg-green-50 border-green-200">
+          <p className="text-3xl font-bold">{countByStatus(southList, 'closed') + countByStatus(southList, 'reviewing')}</p>
+          <p className="text-sm text-gray-700 mt-1">已闭环</p>
+        </article>
+      </section>
+      <nav className="flex gap-2 mb-4 flex-wrap">
+        {CITIES.map((c) => (
+          <button key={c} type="button" onClick={() => setCity(c)} className={`px-3 py-1.5 rounded-lg text-sm ${city === c ? 'bg-yellow-400 text-gray-900 font-medium' : 'bg-gray-200 text-gray-600'}`}>
+            {c}
+          </button>
+        ))}
+      </nav>
+      <ul className="space-y-3">
+        {filtered.map((a) => (
+          <li key={a.id}>
+            <AnomalyCard anomaly={a} showCity />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function DirectorKpiCard({ icon, label, value, unit, color, sub }) {
+  return (
+    <article className="bg-white border border-gray-200 rounded-xl p-4 relative">
+      {icon && (
+        <i className={`fas ${icon} absolute top-4 right-4 text-lg opacity-80 ${color}`} />
+      )}
+      <p className={`text-2xl font-bold ${color}`}>
+        {value}
+        {unit && <span className="text-sm font-normal ml-0.5">{unit}</span>}
+      </p>
+      <p className="text-sm text-gray-700 mt-1 font-medium">{label}</p>
+      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+    </article>
+  );
+}
+
+function InsightColumn({ title, icon, bg, items }) {
+  const actionLabel = { special: '发起专项整治', resource: '调配督导资源', sop: '更新 SOP', train: '触发培训', task: '下派任务', report: '上报总监' };
+  return (
+    <article className={`${bg} rounded-lg p-3`}>
+      <h3 className="font-medium text-sm mb-2 flex items-center gap-2">
+        <i className={`fas ${icon}`} />
+        {title}
+      </h3>
+      <ul className="space-y-2">
+        {items.map((item, i) => (
+          <li key={i} className="text-xs text-gray-700">
+            <p>▸ {item.text}</p>
+            {item.recommend && (
+              <p className="text-yellow-800 bg-yellow-100 inline-block mt-1 px-1.5 py-0.5 rounded">
+                → 建议：{actionLabel[item.recommend] || item.recommend}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
+function DirectorAction({ color, icon, title, desc, reason, highlighted, done, onConfirm }) {
+  const [confirming, setConfirming] = useState(false);
+  const ic = color === 'purple' ? 'text-purple-500' : color === 'blue' ? 'text-blue-500' : color === 'red' ? 'text-red-500' : 'text-gray-500';
+  const btn =
+    color === 'purple'
+      ? 'bg-purple-500 hover:bg-purple-600'
+      : color === 'blue'
+        ? 'bg-blue-500 hover:bg-blue-600'
+        : color === 'red'
+          ? 'bg-red-500 hover:bg-red-600'
+          : 'bg-gray-600 hover:bg-gray-700';
+  return (
+    <article className={`bg-white border border-gray-200 rounded-xl p-4 ${highlighted ? 'ring-2 ring-yellow-400 shadow-lg' : ''}`}>
+      {highlighted && <span className="text-xs bg-yellow-400 text-gray-900 px-2 py-0.5 rounded font-medium mb-2 inline-block">AI 推荐动作</span>}
+      <i className={`fas ${icon} text-xl mb-2 ${ic}`} />
+      <h3 className="font-medium text-sm text-gray-900">{title}</h3>
+      {desc && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{desc}</p>}
+      {reason && <p className="text-xs text-gray-600 mt-2 mb-2 italic">判定依据：{reason}</p>}
+      {done ? (
+        <p className="text-xs text-green-600 mt-2">已发起，执行中</p>
+      ) : confirming ? (
+        <div className="flex gap-1 mt-2">
+          <button type="button" onClick={() => { onConfirm(); setConfirming(false); }} className="flex-1 bg-gray-800 text-white text-xs py-1 rounded">
+            确认
+          </button>
+          <button type="button" onClick={() => setConfirming(false)} className="flex-1 border text-xs py-1 rounded">
+            取消
+          </button>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setConfirming(true)} className={`mt-2 w-full text-xs py-1.5 rounded text-white ${btn}`}>
+          执行
+        </button>
+      )}
+    </article>
+  );
+}
+
+function DirectorDashboardPage() {
+  const { timeRange } = useApp();
+  const stats = GLOBAL_STATS[timeRange];
+  const roi = ROI_DATA[timeRange];
+  const [expanded, setExpanded] = useState('华南');
+  const [actionDone, setActionDone] = useState({});
+  const regions = [...REGION_DATA].sort((a, b) => b.riskScore - a.riskScore);
+  const groups = directorInsightGroups(timeRange);
+  const insightItems = [...groups.alert, ...groups.trend, ...groups.positive];
+  const barData = roi.map((d) => ({ label: d.label, value: d.intercepted }));
+  const lineData = roi.map((d) => ({ label: d.label, value: d.saved }));
+  const totalIntercepted = roi.reduce((s, d) => s + d.intercepted, 0);
+  const totalSaved = roi.reduce((s, d) => s + d.saved, 0);
+  const recommended = getRecommendedIds(insightItems);
+
+  return (
+    <div className="p-6">
+      <header className="flex items-start justify-between mb-6">
+        <section>
+          <h1 className="text-2xl font-bold text-gray-900">全国营运看板</h1>
+          <p className="text-sm text-gray-500 mt-1">全国 · 五大区 · 2000 家门店 · 2026-05-19</p>
+        </section>
+        <div className="flex items-center gap-4">
+          <TimeRangeSwitcher />
+          <span className="flex items-center gap-2 text-sm text-green-600">
+            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+            实时更新
+          </span>
+        </div>
+      </header>
+      <section className="grid grid-cols-5 gap-4 mb-6">
+        <DirectorKpiCard icon="fa-store" label="全国门店总数" value="2000" unit="家" color="text-gray-800" sub="覆盖五大区" />
+        <DirectorKpiCard icon="fa-bell" label={getNewAnomalyLabel(timeRange)} value={stats.newAnomalies} unit="条" color="text-red-600" sub="需督导处理" />
+        <DirectorKpiCard icon="fa-chart-pie" label="整改完成率" value={`${stats.rectifyRate}%`} color="text-green-600" sub="全国平均" />
+        <DirectorKpiCard icon="fa-robot" label="AI 识别准确率" value={`${stats.aiAccuracy}%`} color="text-blue-600" sub="模型持续优化" />
+        <DirectorKpiCard icon="fa-coins" label="AI 节省人力成本" value={stats.costSaved} unit="万元" color="text-yellow-600" sub={`拦截 ${stats.intercepted} 条违规`} />
+      </section>
+      <section className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="font-semibold text-gray-900">AI 智能洞察报告</h2>
+            <p className="text-xs text-gray-500">基于规则引擎 + 统计异常检测，{getTimeRangeLabel(timeRange)}数据</p>
+          </div>
+          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">自动生成</span>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <InsightColumn title="重点预警" icon="fa-exclamation-circle" bg="bg-red-50" items={groups.alert} />
+          <InsightColumn title="趋势关注" icon="fa-chart-line" bg="bg-orange-50" items={groups.trend} />
+          <InsightColumn title="正向信号" icon="fa-check-circle" bg="bg-green-50" items={groups.positive} />
+        </div>
+      </section>
+
+      <section className="grid grid-cols-5 gap-6 mb-6">
+        <article className="col-span-3 bg-white border border-gray-200 rounded-xl p-4 opacity-90">
+          <h2 className="font-semibold text-gray-900">大区风险分布</h2>
+          <p className="text-xs text-gray-400 mb-4">参考维度 · 点击大区查看城市明细</p>
+          <ul className="space-y-2">
+            {regions.map((r) => {
+              const level = getRiskScoreLevel(r.riskScore);
+              const isOpen = expanded === r.zone;
+              return (
+                <li key={r.zone} className="border border-gray-100 rounded-lg overflow-hidden">
+                  <button type="button" onClick={() => setExpanded(isOpen ? null : r.zone)} className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 text-left">
+                    <span className="w-16 font-medium">{r.zone}区</span>
+                    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <span className="block h-full bg-red-400 rounded-full" style={{ width: `${r.riskScore}%` }} />
+                    </div>
+                    <span className="font-bold w-8">{r.riskScore}</span>
+                    <span className={`text-xs px-1.5 border rounded ${level.className}`}>{level.label}</span>
+                    <i className={`fas fa-chevron-down text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {isOpen && (
+                    <ul className="px-4 pb-3 space-y-2 bg-gray-50">
+                      {r.cities.map((c) => {
+                        const cl = getRiskScoreLevel(c.score);
+                        return (
+                          <li key={c.name} className="flex items-center gap-2 text-sm pl-4">
+                            <span className="w-16">{c.name}</span>
+                            <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                              <span className="block h-full bg-orange-400 rounded-full" style={{ width: `${c.score}%` }} />
+                            </div>
+                            <span className="w-6">{c.score}</span>
+                            <span className={`text-xs ${cl.className.split(' ')[0]}`}>{cl.label}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </article>
+        <article className="col-span-2 bg-white border border-gray-200 rounded-xl p-4 opacity-90">
+          <h2 className="font-semibold text-gray-900 mb-3">大区 × 六大板块热力矩阵</h2>
+          <p className="text-xs text-gray-400 mb-2">参考维度 · 按板块聚合异常</p>
+          <table className="w-full text-xs">
+            <thead>
+              <tr>
+                <th className="text-left py-1" />
+                {PROBLEM_TYPES.map((p) => (
+                  <th key={p} className="py-1 font-normal text-gray-500 px-0.5">
+                    {p}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {regions.map((r) => (
+                <tr key={r.zone}>
+                  <td className="py-1 font-medium">{r.zone}区</td>
+                  {(HEAT_MATRIX[r.zone] || []).map((level, i) => (
+                    <td key={i} className="p-0.5">
+                      <span className={`block text-center py-1 rounded ${getHeatCellClass(level)}`}>{getHeatLabel(level)}</span>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-xs text-gray-400 mt-3 flex gap-3">
+            <span className="text-red-600">■ 高</span>
+            <span className="text-orange-500">■ 中</span>
+            <span className="text-green-600">■ 低</span>
+          </p>
+        </article>
+      </section>
+      <section className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h2 className="font-semibold text-gray-900">AI ROI 追踪</h2>
+            <p className="text-xs text-gray-500">AI自动拦截违规数量 vs 人工督导成本节省核算</p>
+          </div>
+          <div className="flex gap-4 text-xs">
+            <span>
+              <span className="inline-block w-3 h-0.5 bg-blue-500 mr-1 align-middle" />
+              AI拦截违规（条）
+            </span>
+            <span>
+              <span className="inline-block w-3 h-0.5 bg-yellow-500 mr-1 align-middle" />
+              节省成本（万元）
+            </span>
+          </div>
+        </div>
+        <div className="grid grid-cols-4 gap-3 mb-4">
+          <article className="bg-gray-50 rounded-lg p-3 text-center">
+            <p className="text-lg font-bold text-blue-600">{totalIntercepted}</p>
+            <p className="text-xs text-gray-500">{getTimeRangeLabel(timeRange)}拦截违规（条）</p>
+          </article>
+          <article className="bg-gray-50 rounded-lg p-3 text-center">
+            <p className="text-lg font-bold text-purple-600">{Math.round(totalIntercepted * 0.5)}</p>
+            <p className="text-xs text-gray-500">节省督导人力（人天）</p>
+          </article>
+          <article className="bg-gray-50 rounded-lg p-3 text-center">
+            <p className="text-lg font-bold text-yellow-600">{totalSaved.toFixed(1)}</p>
+            <p className="text-xs text-gray-500">折算成本节省（万元）</p>
+          </article>
+          <article className="bg-gray-50 rounded-lg p-3 text-center">
+            <p className="text-lg font-bold text-green-600">{stats.aiAccuracy}%</p>
+            <p className="text-xs text-gray-500">AI 拦截率</p>
+          </article>
+        </div>
+        <div className="grid grid-cols-2 gap-6">
+          <div>
+            <p className="text-sm text-gray-600 mb-2">AI 拦截违规数量趋势（单位：条）</p>
+            <CssBarChart data={barData} />
+          </div>
+          <div>
+            <p className="text-sm text-gray-600 mb-2">人工成本节省趋势（单位：万元）</p>
+            <SvgLineChart data={lineData} />
+          </div>
+        </div>
+      </section>
+      <section className="bg-white border border-gray-200 rounded-xl p-4">
+        <header className="mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">总监决策动作</h2>
+          <p className="text-sm text-gray-500 mt-1">基于 AI 洞察报告，选择对应的战略级干预动作（黄框为 AI 推荐）</p>
+        </header>
+        <div className="grid grid-cols-4 gap-4">
+          {DIRECTOR_ACTIONS.map((a) => (
+            <DirectorAction
+              key={a.id}
+              color={a.color}
+              icon={a.icon}
+              title={a.title}
+              desc={a.desc}
+              reason={a.reason}
+              highlighted={recommended.has(a.id)}
+              done={actionDone[a.id]}
+              onConfirm={() => setActionDone((p) => ({ ...p, [a.id]: true }))}
+            />
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function GuidePage() {
+  const { setRole } = useApp();
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(true), 100);
+    return () => clearTimeout(t);
+  }, []);
+  const enter = (step) => {
+    setRole(step.role);
+    navigateTo(step.path);
+  };
+  return (
+    <div className="min-h-screen bg-gray-950 text-white flex flex-col">
+      <header className="text-center pt-12 pb-8 px-4">
+        <div className="inline-flex items-center gap-3 mb-4">
+          <span className="w-12 h-12 bg-yellow-400 rounded-xl flex items-center justify-center">
+            <i className="fas fa-lemon text-gray-900 text-xl" />
+          </span>
+          <div className="text-left">
+            <h1 className="text-2xl font-bold">林立柠檬茶</h1>
+            <p className="text-gray-400 text-sm">营运 AI 管理平台 · 面试 Demo</p>
+          </div>
+        </div>
+        <p className="text-gray-400 max-w-2xl mx-auto text-sm">配合 PRD 展示 · 回应营运部 AI 提效三大核心痛点</p>
+      </header>
+      <div className={`flex-1 max-w-6xl mx-auto w-full px-6 grid md:grid-cols-3 gap-6 transition-all duration-500 ${visible ? 'opacity-100 translate-y-0 guide-animate' : 'opacity-0 translate-y-4'}`}>
+        {GUIDE_STEPS.map((step) => (
+          <article key={step.tag} className={`rounded-2xl border-2 p-6 text-gray-900 flex flex-col ${step.color}`}>
+            <span className={`text-xs font-semibold px-2 py-1 rounded w-fit ${step.tagColor}`}>{step.tag}</span>
+            <span className={`w-12 h-12 rounded-xl flex items-center justify-center mt-4 ${step.iconBg}`}>
+              <i className={`fas ${step.icon} text-xl ${step.iconColor}`} />
+            </span>
+            <p className="text-xs text-gray-500 mt-4">{step.roleLabel}</p>
+            <h2 className="text-lg font-bold mt-1">{step.title}</h2>
+            <p className="text-sm text-gray-600 mt-3 flex-1 leading-relaxed">
+              <span className="font-semibold text-gray-800 not-italic">需求：</span>
+              {step.painPoint}
+            </p>
+            <p className="text-sm text-gray-700 mt-3 leading-relaxed">{step.design}</p>
+            <button type="button" onClick={() => enter(step)} className={`mt-6 w-full py-2.5 rounded-lg font-medium text-sm ${step.btnColor}`}>
+              进入体验
+            </button>
+          </article>
+        ))}
+      </div>
+      <footer className="text-center py-10">
+        <button type="button" onClick={() => { setRole('supervisor'); navigateTo('#/supervisor/list'); }} className="text-gray-500 hover:text-yellow-400 text-sm transition-colors">
+          跳过引导，直接进入系统 →
+        </button>
+      </footer>
+    </div>
+  );
+}
+
+function AppShell() {
+  const route = useHashRoute();
+  const hash = typeof window !== 'undefined' ? window.location.hash : '';
+  if (route.page === 'guide') {
+    return <GuidePage />;
+  }
+  return (
+    <div className="flex min-h-screen">
+      <Sidebar key={hash} />
+      <main className="flex-1 overflow-auto min-h-screen bg-gray-50">
+        {route.page === 'supervisor-list' && <AnomalyListPage />}
+        {route.page === 'supervisor-detail' && <AnomalyDetailPage id={route.id} />}
+        {route.page === 'supervisor-tracking' && <TrackingPage />}
+        {route.page === 'manager-dashboard' && <ManagerDashboardPage />}
+        {route.page === 'manager-anomalies' && <ManagerAnomaliesPage />}
+        {route.page === 'director-dashboard' && <DirectorDashboardPage />}
+      </main>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <AppProvider>
+      <AppShell />
+    </AppProvider>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+  </script>
+</body>
+</html>
